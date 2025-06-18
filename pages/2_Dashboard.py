@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 
 # --- Apply PulseIQ blue styling to headers globally ---
+st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 h1, h2, h3, h4 {
@@ -22,7 +23,6 @@ if 'df' in st.session_state:
     df = df[pd.to_numeric(df['MMWR_WEEK'], errors='coerce').notnull()]
     df['MMWR_WEEK'] = df['MMWR_WEEK'].astype(int)
     df = df[df['MMWR_WEEK'] > 0]
-
     df['week'] = df['MMWR_WEEK'].apply(lambda x: f"W{int(x):02}")
 
     @st.cache_data
@@ -51,6 +51,7 @@ if 'df' in st.session_state:
         "🗽 County and Counties Comparison"
     ])
 
+    # Tab 1 – Donut Chart
     with tab1:
         st.subheader("📈 % of Sentimental Collection")
         sentiment_counts = df['Sentiments_pat_ana'].value_counts().reset_index()
@@ -59,50 +60,9 @@ if 'df' in st.session_state:
                      color='Sentiment', color_discrete_map=sentiment_colors)
         st.plotly_chart(fig, use_container_width=True)
 
+    # Tab 2 – Section 1: Multi County → Section 2: Selected County
     with tab2:
-        st.subheader("📊 Weekly Sentiment Capture for Selected County")
-
-        selected_county = st.selectbox("Select a County", sorted(df['county_name'].unique()), index=0)
-        df_county = df[df['county_name'] == selected_county]
-
-        if df_county.empty:
-            st.warning("No data available for the selected county.")
-        else:
-            sentiment_summary = df_county.groupby(['MMWR_WEEK', 'Sentiments_pat_ana']).size().reset_index(name="Count")
-
-            all_weeks = list(range(1, 53))
-            all_sentiments = ['Positive', 'Neutral', 'Negative']
-            full_index = pd.MultiIndex.from_product([all_weeks, all_sentiments], names=['MMWR_WEEK', 'Sentiments_pat_ana'])
-            sentiment_summary = sentiment_summary.set_index(['MMWR_WEEK', 'Sentiments_pat_ana']).reindex(full_index, fill_value=0).reset_index()
-
-            fig_bar = px.bar(
-                sentiment_summary,
-                x="MMWR_WEEK",
-                y="Count",
-                color="Sentiments_pat_ana",
-                text="Count",
-                barmode="stack",
-                labels={
-                    "MMWR_WEEK": "Week",
-                    "Count": "Sentiment Count",
-                    "Sentiments_pat_ana": "Sentiment"
-                },
-                color_discrete_map=sentiment_colors,
-                title=f"Weekly Sentiment Trend – {selected_county.title()}"
-            )
-
-            fig_bar.update_traces(textposition="inside")
-            fig_bar.update_layout(
-                xaxis=dict(
-                    tickmode='array',
-                    tickvals=list(range(1, 53)),
-                    ticktext=[str(i) for i in range(1, 53)],
-                    title="Week"
-                ),
-                xaxis_tickangle=-45
-            )
-            st.plotly_chart(fig_bar, use_container_width=True)
-
+        # 🔹 Section 1: Multi County Comparison
         st.subheader("📊 Multi County Comparison for Decision Making")
         selected_sentiment = st.selectbox("Select Sentimental trend to Compare", ['Positive', 'Neutral', 'Negative'])
         county_comparison = (
@@ -125,6 +85,55 @@ if 'df' in st.session_state:
         fig_cmp.update_traces(textposition='outside')
         fig_cmp.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig_cmp, use_container_width=True)
+
+        # 🔹 Section 2: Weekly Sentiment for Selected County
+        st.subheader("📊 Weekly Sentiment Capture for Selected County")
+        selected_county = st.selectbox("Select a County", sorted(df['county_name'].unique()), index=0)
+        df_county = df[df['county_name'] == selected_county]
+
+        if df_county.empty:
+            st.warning("No data available for the selected county.")
+        else:
+            # Weekly sentiment trend + disease info for hover
+            sentiment_summary = df_county.groupby(['MMWR_WEEK', 'Sentiments_pat_ana']) \
+                                         .agg(Count=('Sentiments_pat_ana', 'size'),
+                                              Disease=('Disease', lambda x: x.mode().iloc[0] if not x.mode().empty else None)) \
+                                         .reset_index()
+
+            # Ensure full grid
+            all_weeks = list(range(1, 53))
+            all_sentiments = ['Positive', 'Neutral', 'Negative']
+            full_index = pd.MultiIndex.from_product([all_weeks, all_sentiments], names=['MMWR_WEEK', 'Sentiments_pat_ana'])
+            sentiment_summary = sentiment_summary.set_index(['MMWR_WEEK', 'Sentiments_pat_ana']).reindex(full_index, fill_value=0).reset_index()
+
+            fig_bar = px.bar(
+                sentiment_summary,
+                x="MMWR_WEEK",
+                y="Count",
+                color="Sentiments_pat_ana",
+                text="Count",
+                barmode="stack",
+                labels={
+                    "MMWR_WEEK": "Week",
+                    "Count": "Sentiment Count",
+                    "Sentiments_pat_ana": "Sentiment"
+                },
+                hover_data=["Disease"],
+                color_discrete_map=sentiment_colors,
+                title=f"Weekly Sentiment Trend – {selected_county.title()}"
+            )
+
+            fig_bar.update_traces(textposition="inside")
+            fig_bar.update_layout(
+                xaxis=dict(
+                    tickmode='array',
+                    tickvals=list(range(1, 53)),
+                    ticktext=[str(i) for i in range(1, 53)],
+                    title="Week"
+                ),
+                xaxis_tickangle=-45
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
 else:
     st.warning("⚠️ Please upload and analyze data first on the 'Upload and Analyze' page.")
